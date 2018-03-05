@@ -21,7 +21,7 @@ class Preproccessor(object):
             text_file = img_file.split('.')[0] + '.txt'
             img = cv2.imread(os.path.join(img_path, img_file), 0)
             # resize to same shape
-            img = cv2.resize(img, (128, 32))
+            img = self.process_img(img)
             self.imgs.append(img)
             with open(os.path.join(text_path, text_file), 'r', encoding='utf8') as text_in:
                 char_list = []
@@ -35,10 +35,15 @@ class Preproccessor(object):
         padded_texts = self.padding(raw_texts)
 
         # word2id
-        self.texts = self.word2id_transform(padded_texts, model_path)
+        self.texts, self.word2id = self.word2id_transform(padded_texts, model_path)
 
         # transform imgs to np.array
         self.imgs = np.array(self.imgs)
+
+    def process_img(self, img, width=128, height=32):
+        img = cv2.resize(img, (width, height))
+        img = np.reshape(img, (height, width, 1))
+        return img
 
     def word2id_transform(self, raw_texts, model_path):
         word2id_path = os.path.join(model_path, 'word2id.pkl')
@@ -57,7 +62,7 @@ class Preproccessor(object):
             with open(word2id_path, 'rb') as word2id_in:
                 word2id = pickle.load(word2id_in)
 
-        return np.array([[word2id[j] for j in i] for i in raw_texts])
+        return np.array([[word2id[j] for j in i] for i in raw_texts]), word2id
 
     def padding(self, raw_text):
         max_len = 0

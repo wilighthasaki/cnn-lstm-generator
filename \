@@ -6,7 +6,7 @@ class CNNLSTMGenerator(object):
     '''
     这是用CNN + LSTM + Attention + Decoder组成的图片文字识别模型
     '''
-    def __init__(self, height, width, time_steps, num_classes, word2id, batch_size=32, embedding_dim=300, hidden_dim=300, is_train=True):
+    def __init__(self, height, width, time_steps, num_classes, word2id, embedding_dim=300, hidden_dim=300, is_train=True):
 
         self.hidden_dim = hidden_dim
         self.word2id = word2id
@@ -15,13 +15,12 @@ class CNNLSTMGenerator(object):
         self.time_steps = time_steps
         self.embedding_dim = embedding_dim
 
-        print(height)
         # 输入输出
         self.image_input = tf.placeholder(tf.float32, [None, height, width, 1])
         self.decode_seqs = tf.placeholder(tf.int64, [None, time_steps])
         self.mask = tf.placeholder(tf.float32, [None, time_steps])
         # default height = 32, width = 128
-        self.batch_size = batch_size
+        self.batch_size = 32
 
         with tf.variable_scope('embedding_layer'):
             self.embedding_matrix = tf.get_variable('emb_matrix',
@@ -87,7 +86,6 @@ class CNNLSTMGenerator(object):
                 # input: [batch_size, height / 4, width / 4, 64]
                 # output: [batch_size, width / 4, height / 4 * 64]
                 self.inputs = tf.transpose(self.pool, perm=[0, 2, 1, 3])
-                print(self.inputs.get_shape().as_list())
                 self.inputs = tf.reshape(self.inputs, [-1, int(width / 4), int(height / 4) * 64])
 
                 # Forward direction cell
@@ -100,36 +98,34 @@ class CNNLSTMGenerator(object):
                                                                     self.lstm_bw_cell,
                                                                     self.inputs,
                                                                     dtype=tf.float32)
-                # self.final_state = tf.concat((self.final_state[0][0], self.final_state[1][0]), 1)
-                # self.final_state = tf.concat(self.final_state, 2)
-                self.final_state = self.final_state[0]
+
+                self.final_state = self.final_state[1]
+                print(self.final_state.get_shape().as_list())
+
 
                 self.lstm_outputs = tf.concat((self.outputs[0], self.outputs[1]), axis=2)
 
             with tf.variable_scope('decoder'):
                 self.decode_LSTM_cell = tf.contrib.rnn.LSTMCell(self.hidden_dim)
-                print(self.lstm_outputs.get_shape().as_list())
                 # add attention mechanism
-                self.attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(600,
+                self.attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(512,
                                                                                 self.lstm_outputs,
                                                                                 memory_sequence_length=[int(width / 4) for _ in range(self.batch_size)])
 
                 self.decode_LSTM_cell = tf.contrib.seq2seq.AttentionWrapper(self.decode_LSTM_cell,
                                                                             self.attention_mechanism,
-                                                                            # initial_cell_state=self.final_state,
+                                                                            initial_cell_state=self.final_state,
                                                                             attention_layer_size=len(self.word2id))
 
                 self.helper = tf.contrib.seq2seq.GreedyEmbeddingHelper(embedding=self.embedding_matrix,
                                                                        start_tokens=tf.tile([word2id['<EOS>']], [self.batch_size]),
                                                                        end_token=word2id['<EOS>']
                                                                        )
-                self.decoder_init_state =self.decode_LSTM_cell.zero_state(self.batch_size, tf.float32)
-                self.decoder_init_state = self.decoder_init_state.clone(cell_state=self.final_state)
 
                 self.decoder = tf.contrib.seq2seq.BasicDecoder(
                     cell=self.decode_LSTM_cell,
                     helper=self.helper,
-                    initial_state=self.decoder_init_state
+                    initial_state=self.final_state
                     # initial_state=self.decode_LSTM_cell.zero_state(self.batch_size, tf.float32)
                 )
                 self.outputs, _, _ = tf.contrib.seq2seq.dynamic_decode(
@@ -174,13 +170,12 @@ class CNNLSTMGenerator(object):
                 if seq[i_w] == pad_val:
                     mask[i, i_w] = 0
                 else:
-                    mask[i, i_w + 1] = 1
                     break   # <-- exit the for loop, prepcess next sequence
         return mask
 
     def train(self, sess, imgs, decode_seqs, num_epochs=10, model_path='outputs/models/model1'):
         saver = tf.train.Saver()
-        # saver.restore(sess, model_path)
+        saver.restore(sess, model_path)
 
         for epoch in range(num_epochs):
             loss_list = []
@@ -208,9 +203,7 @@ class CNNLSTMGenerator(object):
         target = sess.run(
             self.y_op,
             feed_dict={
-                self.image_input: [x_input]
+                self.image_input: x_input
             }
         )
-        target = target[0]
-        words = [self.id2word[i] for i in target]
-        return words
+        return target
