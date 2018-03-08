@@ -19,8 +19,8 @@ args = parser.parse_args()
 
 print('正在预处理数据')
 pre = Preproccessor(args.img_path, args.text_path, args.word2id_path)
-imgs = pre.imgs[:2000]
-texts = pre.texts[:2000]
+imgs = pre.imgs[:1000]
+texts = pre.texts[:1000]
 word2id = pre.word2id
 
 model_path = args.model_path

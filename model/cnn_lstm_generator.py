@@ -6,6 +6,42 @@ class CNNLSTMGenerator(object):
     '''
     这是用CNN + LSTM + Attention + Decoder组成的图片文字识别模型
     '''
+
+    def _max_pooling(self, tensor, name):
+        '''
+        最大池化层的实现
+        '''
+        return tf.nn.max_pool(tensor,
+                              ksize=[1, 2, 2, 1],
+                              strides=[1, 2, 2, 1],
+                              padding='SAME',
+                              name=name)
+
+    def _conv(self, tensor, filter_num, name):
+        '''
+        卷积层的实现
+        '''
+        with tf.variable_scope(name):
+            # 卷积层参数
+            tensor_shape = tensor.get_shape().as_list()
+            conv_weights = tf.get_variable(
+                'w',
+                shape=[3, 3, tensor_shape[-1], filter_num],
+                dtype=tf.float32
+            )
+            conv_biases = tf.get_variable(
+                'b',
+                shape=[filter_num]
+            )
+            # 卷积层
+            conv = tf.nn.conv2d(tensor,
+                                conv_weights,
+                                strides=[1, 1, 1, 1],
+                                padding='SAME')
+
+            relu = tf.nn.relu(tf.nn.bias_add(conv, conv_biases))
+            return relu
+
     def __init__(self, height, width, time_steps, num_classes, word2id, batch_size=32, embedding_dim=300, hidden_dim=300, is_train=True):
 
         self.hidden_dim = hidden_dim
@@ -15,7 +51,6 @@ class CNNLSTMGenerator(object):
         self.time_steps = time_steps
         self.embedding_dim = embedding_dim
 
-        print(height)
         # 输入输出
         self.image_input = tf.placeholder(tf.float32, [None, height, width, 1])
         self.decode_seqs = tf.placeholder(tf.int64, [None, time_steps])
@@ -30,65 +65,39 @@ class CNNLSTMGenerator(object):
 
             self.decode_seqs_emb = tf.nn.embedding_lookup(self.embedding_matrix,
                                                           self.decode_seqs)
-            print(self.embedding_matrix.get_shape().as_list())
 
         # 网络结构
         with tf.variable_scope('main_model'):
-            with tf.variable_scope('conv1'):
-                # 卷积层1参数
-                self.conv1_weights = tf.get_variable(
-                    'conv1_w',
-                    shape=[5, 5, 1, 32],
-                    dtype=tf.float32
-                )
-                self.conv1_biases = tf.get_variable(
-                    'conv1_b',
-                    shape=[32]
-                )
-                # 卷积层1
-                self.conv1 = tf.nn.conv2d(self.image_input,
-                                          self.conv1_weights,
-                                          strides=[1, 1, 1, 1],
-                                          padding='SAME')
-                self.relu1 = tf.nn.relu(tf.nn.bias_add(self.conv1, self.conv1_biases))
+            self.conv1_1 = self._conv(self.image_input, 64, 'conv1_1')
+            self.conv1_2 = self._conv(self.conv1_1, 64, 'conv1_2')
+            self.pool1 = self._max_pooling(self.conv1_2, 'pool1')
 
-                # 池化层
-                self.pool1 = tf.nn.max_pool(self.relu1,
-                                            ksize=[1, 2, 2, 1],
-                                            strides=[1, 2, 2, 1],
-                                            padding='SAME')
+            self.conv2_1 = self._conv(self.pool1, 128, 'conv2_1')
+            self.conv2_2 = self._conv(self.conv2_1, 128, 'conv2_2')
+            self.pool2 = self._max_pooling(self.conv2_2, 'pool2')
 
-            with tf.variable_scope('conv2'):
-                # 卷积层2参数
-                self.conv2_weights = tf.get_variable(
-                    'conv2_w',
-                    shape=[5, 5, 32, 64],
-                    dtype=tf.float32
-                )
-                self.conv2_biases = tf.get_variable(
-                    'conv2_b',
-                    shape=[64]
-                )
-                # 卷积层2
-                self.conv2 = tf.nn.conv2d(self.pool1,
-                                          self.conv2_weights,
-                                          strides=[1, 1, 1, 1],
-                                          padding='SAME')
-                self.relu2 = tf.nn.relu(tf.nn.bias_add(self.conv2, self.conv2_biases))
+            self.conv3_1 = self._conv(self.pool2, 256, 'conv3_1')
+            self.conv3_2 = self._conv(self.conv3_1, 256, 'conv_3_2')
+            self.conv3_3 = self._conv(self.conv3_2, 256, 'conv3_3')
+            self.pool3 = self._max_pooling(self.conv3_3, 'pool3')
 
-                # 池化层
-                self.pool = tf.nn.max_pool(self.relu2,
-                                           ksize=[1, 2, 2, 1],
-                                           strides=[1, 2, 2, 1],
-                                           padding='SAME')
+            self.conv4_1 = self._conv(self.pool3, 512, 'conv4_1')
+            self.conv4_2 = self._conv(self.conv4_1, 512, 'conv4_2')
+            self.conv4_3 = self._conv(self.conv4_2, 512, 'conv4_3')
+            self.pool4 = self._max_pooling(self.conv4_3, 'pool4')
+
+            self.conv5_1 = self._conv(self.pool4, 512, 'conv5_1')
+            self.conv5_2 = self._conv(self.conv5_1, 512, 'conv5_2')
+            self.conv5_3 = self._conv(self.conv5_2, 512, 'conv5_3')
+            self.pool5 = self._max_pooling(self.conv5_3, 'pool5')
 
             with tf.variable_scope('blstm'):
                 # reshape
                 # input: [batch_size, height / 4, width / 4, 64]
                 # output: [batch_size, width / 4, height / 4 * 64]
-                self.inputs = tf.transpose(self.pool, perm=[0, 2, 1, 3])
+                self.inputs = tf.transpose(self.pool5, perm=[0, 2, 1, 3])
                 print(self.inputs.get_shape().as_list())
-                self.inputs = tf.reshape(self.inputs, [-1, int(width / 4), int(height / 4) * 64])
+                self.inputs = tf.reshape(self.inputs, [-1, int(width / 32), int(height / 32) * 512])
 
                 # Forward direction cell
                 self.lstm_fw_cell = tf.contrib.rnn.LSTMCell(self.hidden_dim, forget_bias=1.0)
@@ -112,7 +121,7 @@ class CNNLSTMGenerator(object):
                 # add attention mechanism
                 self.attention_mechanism = tf.contrib.seq2seq.BahdanauAttention(600,
                                                                                 self.lstm_outputs,
-                                                                                memory_sequence_length=[int(width / 4) for _ in range(self.batch_size)])
+                                                                                memory_sequence_length=[int(width / 32) for _ in range(self.batch_size)])
 
                 self.decode_LSTM_cell = tf.contrib.seq2seq.AttentionWrapper(self.decode_LSTM_cell,
                                                                             self.attention_mechanism,

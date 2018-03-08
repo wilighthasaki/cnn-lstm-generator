@@ -40,9 +40,19 @@ class Preproccessor(object):
         # transform imgs to np.array
         self.imgs = np.array(self.imgs)
 
-    def process_img(self, img, width=128, height=32):
-        img = cv2.resize(img, (width, height))
-        img = np.reshape(img, (height, width, 1))
+    def process_img(self, img, width=448, height=224):
+        img = 1 - img / 255
+        padded = np.zeros((height, width))
+        if img.shape[0] * 2 > img.shape[1]:
+            resize_width = int(224 * img.shape[1] / img.shape[0])
+            img = cv2.resize(img, (resize_width, height))
+            padded[:, int(224 - resize_width / 2): int(224 - resize_width / 2) + resize_width] = img
+        else:
+            resize_height = int(448 * img.shape[0] / img.shape[1])
+            img = cv2.resize(img, (width, resize_height))
+            padded[int(112 - resize_height / 2): int(112 - resize_height / 2) + resize_height, :] = img
+
+        img = np.reshape(padded, (height, width, 1))
         return img
 
     def word2id_transform(self, raw_texts, model_path):
